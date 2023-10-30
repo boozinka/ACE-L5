@@ -1,0 +1,29 @@
+---
+- hosts: leafs_DC2
+  gather_facts: no
+  tasks:
+
+  - name: Register Variables
+    include_vars:
+      file: "{{lookup('env','PWD')}}/vars/underlay_vars.yml"
+      name: underlay
+
+  - name: Prune the Inventory Host Interface Dictionary as a Variable
+    ansible.builtin.set_fact:
+      host_intfs: "{{ underlay[inventory_hostname]['interfaces'] }}"
+
+  - name: Prune the Inventory Host BGP Dictionary as a Variable
+    ansible.builtin.set_fact:
+      host_bgp: "{{ underlay[inventory_hostname]['BGP'] }}"
+
+  - name: Create eBGP Leaf Underlay Configuration File
+    template:
+      src: "{{lookup('env','PWD')}}/templates/leafs_underlay.j2"
+      dest: "{{lookup('env','PWD')}}/configs/{{inventory_hostname}}_underlay.cfg"
+
+  - name: Upload config
+    eos_config:
+      src: "{{lookup('env','PWD')}}/configs/{{inventory_hostname}}_underlay.cfg"
+
+
+

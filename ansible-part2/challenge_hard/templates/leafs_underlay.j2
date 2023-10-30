@@ -1,0 +1,96 @@
+!
+service routing protocols model multi-agent
+!
+{# This creates the MLAG configuration #}
+spanning-tree mode mstp
+no spanning-tree vlan-id 4094
+!
+vlan 4094
+  trunk group MLAGPEER
+!
+interface Vlan4094
+  description MLAG PEER LINK
+  ip address {{ host_mlag['ipv4'] }}/{{ host_mlag['mask'] }} 
+!
+interface Port-Channel10
+  description MLAG PEER LINK - LEAF
+  switchport mode trunk
+  switchport trunk group MLAGPEER
+!
+mlag configuration
+  domain-id MLAG
+  local-interface Vlan4094
+  peer-address {{ host_mlag['peer'] }} 
+  peer-link Port-Channel10
+!
+{# This configures the Ethernet1 and 2 #}
+{% for num in range(1,3) %}
+interface Ethernet{{num}}
+  description MLAG PEER LINK - LEAF
+  switchport mode trunk
+  channel-group 10 mode active
+!
+{% endfor %}
+{# This configures the remaining leaf interfaces #}
+{% for intf, intf_attr in host_intfs.items() %}
+interface {{ intf }}
+  ip address {{ intf_attr['ipv4'] }}/{{ intf_attr['mask'] }}
+{% if 'loopback' not in intf %}
+  no switchport
+  mtu 9214
+{% endif %}
+!
+{% endfor %}
+{# Split hostname to identify DC and print relevant prefix list #}
+{% set dc = inventory_hostname.split('-')[1] %}
+{% if dc == 'DC1' %}
+ip prefix-list LOOPBACK seq 10 permit 192.168.101.0/24 eq 32
+ip prefix-list LOOPBACK seq 20 permit 192.168.102.0/24 eq 32
+{% elif dc == 'DC2' %}
+ip prefix-list LOOPBACK seq 10 permit 192.168.201.0/24 eq 32
+ip prefix-list LOOPBACK seq 20 permit 192.168.202.0/24 eq 32
+{% endif %}
+!
+route-map LOOPBACK permit 10
+  match ip address prefix-list LOOPBACK
+!
+router bgp {{ host_bgp['host_asn'] }}
+  router-id {{ host_intfs['loopback0']['ipv4'] }}
+  bgp asn notation asdot
+  bgp log-neighbor-changes
+  no bgp default ipv4-unicast
+  timers bgp 5 15
+  maximum-paths 8 ecmp 8
+  distance bgp 20 200 200
+  !
+{# Print statements for all eBGP peer groups associated with host #}
+{% for ebgp_grp, ebgp_params in host_bgp['peer_groups']['ebgp_groups'].items() %}
+  neighbor {{ ebgp_grp }} peer group
+  neighbor {{ ebgp_grp }} remote-as {{ ebgp_params['peer_grp_asn'] }}
+  neighbor {{ ebgp_grp }} send-community
+  neighbor {{ ebgp_grp }} maximum-routes 12000
+{% for peer in ebgp_params['peers'] %}
+  neighbor {{ peer }} peer group {{ ebgp_grp }}
+{% endfor %}
+{% endfor %}
+{# Print statements for all iBGP peer groups associated with host #}
+{% for ibgp_grp, ibgp_params in host_bgp['peer_groups']['ibgp_groups'].items() %}
+  neighbor {{ ibgp_grp }} peer group
+  neighbor {{ ibgp_grp }} remote-as {{ ibgp_params['peer_grp_asn'] }}
+  neighbor {{ ibgp_grp }} next-hop-self
+  neighbor {{ ibgp_grp }} maximum-routes 12000
+{% for peer in ibgp_params['peers'] %}
+  neighbor {{ peer }} peer group {{ ibgp_grp }}
+{% endfor %}
+{% endfor %}
+  redistribute connected route-map LOOPBACK
+  !
+  address-family ipv4
+{# Print AF activate statements for alll iBGP and eBGP peer groups #}
+{% for ebgp_grp in host_bgp['peer_groups']['ebgp_groups'].keys() %}
+    neighbor {{ ebgp_grp }} activate
+{% endfor %}
+{% for ibgp_grp in host_bgp['peer_groups']['ibgp_groups'].keys() %}
+    neighbor {{ ibgp_grp }} activate
+{% endfor %}
+

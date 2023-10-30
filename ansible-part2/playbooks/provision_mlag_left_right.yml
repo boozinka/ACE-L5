@@ -1,0 +1,23 @@
+---
+- hosts: leaf1-DC1
+  gather_facts: no
+  tasks:
+  - name: Create MLAG for Left Side (Odd Numbered Leaves)
+    template:
+      src: "{{lookup('env','PWD')}}/templates/mlag_left.j2"
+      dest: "{{lookup('env','PWD')}}/configs/mlag_left.cfg"
+  - name: Upload config
+    eos_config:
+      src: "{{lookup('env','PWD')}}/configs/mlag_left.cfg"
+
+- hosts: leaf2-DC1
+  gather_facts: no
+  tasks:
+  - name: Create MLAG for Right Side (Even Numbered Leaves)
+    template:
+      src: "{{lookup('env','PWD')}}/templates/mlag_right.j2"
+      dest: "{{lookup('env','PWD')}}/configs/mlag_right.cfg"
+  - name: Upload config
+    eos_config:
+      src: "{{lookup('env','PWD')}}/configs/mlag_right.cfg"
+  

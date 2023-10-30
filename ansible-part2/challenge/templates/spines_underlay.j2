@@ -1,0 +1,45 @@
+!
+service routing protocols model multi-agent
+!
+{# This configures the spine interfaces #}
+{% for intf, intf_attr in host_intfs.items() %}
+interface {{ intf }}
+  ip address {{ intf_attr['ipv4'] }}/{{ intf_attr['mask'] }}
+{% if 'loopback' not in intf %}
+  no switchport
+  mtu 9214
+{% endif %}
+!
+{% endfor %}
+{# Split hostname to identify DC #}
+{% set dc = inventory_hostname.split('-')[1] %}
+{# Print prefix list relevant to DC #}
+ip prefix-list LOOPBACK seq 10 permit {{ underlay['global'][dc]['lo0'] }} eq 32
+!
+route-map LOOPBACK permit 10
+  match ip address prefix-list LOOPBACK
+!
+peer-filter LEAF-AS-RANGE
+  10 match as-range 65000-65535 result accept
+!
+router bgp {{ underlay['global'][dc]['spine_ASN'] }}
+  router-id {{ host_intfs['loopback0']['ipv4'] }}
+  bgp asn notation asdot
+  bgp log-neighbor-changes
+  no bgp default ipv4-unicast
+  timers bgp 5 15
+  maximum-paths 8 ecmp 8
+  distance bgp 20 200 200
+  !
+  bgp listen range {{ underlay['global'][dc]['p2p'] }} peer-group EBG_LEAF_UNDERLAY peer-filter LEAF-AS-RANGE
+  !
+  neighbor EBG_LEAF_UNDERLAY peer group
+  neighbor EBG_LEAF_UNDERLAY send-community
+  neighbor EBG_LEAF_UNDERLAY maximum-routes 12000
+  redistribute connected route-map LOOPBACK
+  !
+  address-family ipv4
+    neighbor EBG_LEAF_UNDERLAY activate
+  !
+!
+

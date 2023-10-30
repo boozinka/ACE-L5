@@ -1,0 +1,14 @@
+---
+- hosts: DCI
+  gather_facts: no
+  tasks:
+
+  - name: Create DCI Underlay Configuration File
+    template:
+      src: "{{lookup('env','PWD')}}/templates/dci_underlay.j2"
+      dest: "{{lookup('env','PWD')}}/configs/{{inventory_hostname}}_underlay.cfg"
+
+  - name: Upload config
+    eos_config:
+      src: "{{lookup('env','PWD')}}/configs/{{inventory_hostname}}_underlay.cfg"
+

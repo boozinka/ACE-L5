@@ -1,0 +1,49 @@
+!
+service routing protocols model multi-agent
+!
+{# This configures the spine interfaces #}
+{% for intf, intf_attr in host_intfs.items() %}
+interface {{ intf }}
+  ip address {{ intf_attr['ipv4'] }}/{{ intf_attr['mask'] }}
+{% if 'loopback' not in intf %}
+  no switchport
+  mtu 9214
+{% endif %}
+!
+{% endfor %}
+{# Split hostname to identify DC and print relevant prefix list #}
+{% set dc = inventory_hostname.split('-')[1] %}
+{% if dc == 'DC1' %}
+ip prefix-list LOOPBACK seq 10 permit 192.168.101.0/24 eq 32
+ip prefix-list LOOPBACK seq 20 permit 192.168.102.0/24 eq 32
+{% elif dc == 'DC2' %}
+ip prefix-list LOOPBACK seq 10 permit 192.168.201.0/24 eq 32
+ip prefix-list LOOPBACK seq 20 permit 192.168.202.0/24 eq 32
+{% endif %}
+!
+route-map LOOPBACK permit 10
+  match ip address prefix-list LOOPBACK
+!
+peer-filter LEAF-AS-RANGE
+  10 match as-range 65000-65535 result accept
+!
+router bgp {{ host_bgp['host_asn'] }}
+  router-id {{ host_intfs['loopback0']['ipv4'] }}
+  bgp asn notation asdot
+  bgp log-neighbor-changes
+  no bgp default ipv4-unicast
+  timers bgp 5 15
+  maximum-paths 8 ecmp 8
+  distance bgp 20 200 200
+  !
+  bgp listen range 192.168.0.0/16 peer-group EGBP_LEAF_UNDERLAY peer-filter LEAF-AS-RANGE
+  !
+  neighbor EBGP_LEAF_UNDERLAY peer group
+  neighbor EBGP_LEAF_UNDERLAY send-community
+  neighbor EBGP_LEAF_UNDERLAY maximum-routes 12000
+  redistribute connected route-map LOOPBACK
+  !
+  address-family ipv4
+    neighbor EBGP_LEAF_UNDERLAY activate
+  !
+!
